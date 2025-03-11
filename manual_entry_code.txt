@@ -1,0 +1,241 @@
+// Kód pre implementáciu tlačidla "Pridať sumu ručne" a ďalšie potrebné funkcie
+// Tento kód je potrebné pridať do súboru FolderContentScreen.kt
+
+// 1. Pridajte tieto premenné do funkcie FolderContentScreen
+var showAddManualDialog by remember { mutableStateOf(false) }
+var manualAmount by remember { mutableStateOf("") }
+var manualDescription by remember { mutableStateOf("") }
+var isNegativeAmount by remember { mutableStateOf(false) }
+
+// 2. Pridajte tlačidlo "Pridať sumu ručne" do FloatingActionButton
+FloatingActionButton(
+    onClick = { showAddManualDialog = true },
+    modifier = Modifier.padding(16.dp)
+) {
+    Icon(
+        imageVector = Icons.Default.Add,
+        contentDescription = "Pridať sumu ručne"
+    )
+}
+
+// 3. Pridajte dialóg pre manuálne pridanie sumy
+if (showAddManualDialog) {
+    AlertDialog(
+        onDismissRequest = { showAddManualDialog = false },
+        title = { Text("Pridať sumu ručne") },
+        text = {
+            Column {
+                TextField(
+                    value = manualAmount,
+                    onValueChange = { manualAmount = it },
+                    label = { Text("Suma (€)") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp)
+                )
+                
+                TextField(
+                    value = manualDescription,
+                    onValueChange = { manualDescription = it },
+                    label = { Text("Popis") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp)
+                )
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = isNegativeAmount,
+                        onCheckedChange = { isNegativeAmount = it }
+                    )
+                    Text("Záporná suma (výdavok)")
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (manualAmount.isNotBlank()) {
+                        try {
+                            var amount = manualAmount.replace(",", ".").toDouble()
+                            if (isNegativeAmount) {
+                                amount = -amount
+                            }
+                            saveManualAmount(folder, amount, manualDescription, context)
+                            manualAmount = ""
+                            manualDescription = ""
+                            isNegativeAmount = false
+                            showAddManualDialog = false
+                            
+                            // Aktualizácia zoznamu súborov
+                            files.clear()
+                            folder.listFiles()?.forEach { file ->
+                                files.add(file)
+                            }
+                            
+                            // Aktualizácia celkovej sumy
+                            calculateFolderTotalSum()
+                        } catch (e: Exception) {
+                            Toast.makeText(
+                                context,
+                                "Neplatná suma. Zadajte číslo.",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                }
+            ) {
+                Text("Pridať")
+            }
+        },
+        dismissButton = {
+            Button(
+                onClick = { showAddManualDialog = false }
+            ) {
+                Text("Zrušiť")
+            }
+        }
+    )
+}
+
+// 4. Pridajte funkciu pre uloženie ručne zadanej sumy
+private fun saveManualAmount(folder: File, amount: Double, description: String, context: Context) {
+    try {
+        val dateFormat = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault())
+        val currentDate = dateFormat.format(Date())
+        val fileName = if (description.isNotBlank()) {
+            "${currentDate}_${description.replace(" ", "_")}_${amount}€.txt"
+        } else {
+            "${currentDate}_manual_${amount}€.txt"
+        }
+        
+        val file = File(folder, fileName)
+        file.writeText("Suma: $amount €\nPopis: $description\nDátum: ${SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.getDefault()).format(Date())}")
+        
+        Toast.makeText(
+            context,
+            "Suma bola úspešne pridaná",
+            Toast.LENGTH_SHORT
+        ).show()
+    } catch (e: Exception) {
+        Toast.makeText(
+            context,
+            "Chyba pri ukladaní sumy: ${e.message}",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+}
+
+// 5. Pridajte funkciu pre výpočet celkovej sumy v priečinku
+private fun calculateFolderTotalSum() {
+    folderTotalSum = 0.0
+    files.forEach { file ->
+        if (!file.isDirectory && file.name.contains("€")) {
+            val sumRegex = "([\\-]?\\d+[.,]\\d+)€".toRegex()
+            val matchResult = sumRegex.find(file.name)
+            matchResult?.groupValues?.get(1)?.let { sum ->
+                folderTotalSum += sum.replace(",", ".").toDouble()
+            }
+        }
+    }
+}
+
+// 6. Upravte funkciu exportToTable pre lepšie formátovanie tabuľky
+fun exportToTable(fileName: String, title: String, showPreview: Boolean = false): File {
+    val dateFormat = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
+    val currentDate = dateFormat.format(Date())
+    val exportFile = File(folder, "${fileName}.txt")
+    
+    val fileContent = StringBuilder()
+    
+    // Nadpis a dátum
+    fileContent.append("${title}\n")
+    fileContent.append("Dátum: ${currentDate}\n\n")
+    
+    // Určenie šírky stĺpcov
+    val descriptionWidth = 40  // Šírka stĺpca pre popis
+    val amountWidth = 15       // Šírka stĺpca pre sumu
+    
+    // Vytvorenie hlavičky tabuľky
+    fileContent.append("+${"-".repeat(descriptionWidth)}+${"-".repeat(amountWidth)}+\n")
+    fileContent.append("| ${"Popis".padEnd(descriptionWidth - 2)} | ${"Suma".padEnd(amountWidth - 2)} |\n")
+    fileContent.append("+${"-".repeat(descriptionWidth)}+${"-".repeat(amountWidth)}+\n")
+    
+    // Pridanie súm z priečinka
+    files.forEach { file ->
+        if (!file.isDirectory && file.name.contains("€")) {
+            val sumRegex = "([\\-]?\\d+[.,]\\d+)€".toRegex()
+            val matchResult = sumRegex.find(file.name)
+            matchResult?.groupValues?.get(1)?.let { sum ->
+                val sumValue = sum.replace(",", ".").toDouble()
+                
+                // Extrakcia popisu z názvu súboru
+                val descriptionRegex = "\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}_(.+)_[\\-]?\\d+[.,]\\d+€".toRegex()
+                val descMatch = descriptionRegex.find(file.name)
+                var description = descMatch?.groupValues?.get(1)?.replace("_", " ") ?: ""
+                if (description == "manual" || description == "receipt") description = ""
+                
+                // Orezanie popisu, ak je príliš dlhý
+                if (description.length > descriptionWidth - 4) {
+                    description = description.substring(0, descriptionWidth - 7) + "..."
+                }
+                
+                // Formátovanie riadku tabuľky
+                fileContent.append("| ${description.padEnd(descriptionWidth - 2)} | ${String.format("%${amountWidth - 4}s €", String.format("%.2f", sumValue))} |\n")
+            }
+        }
+    }
+    
+    // Pridanie celkovej sumy na koniec
+    fileContent.append("+${"-".repeat(descriptionWidth)}+${"-".repeat(amountWidth)}+\n")
+    fileContent.append("| ${"Spolu:".padEnd(descriptionWidth - 2)} | ${String.format("%${amountWidth - 4}s €", String.format("%.2f", folderTotalSum))} |\n")
+    fileContent.append("+${"-".repeat(descriptionWidth)}+${"-".repeat(amountWidth)}+\n")
+    
+    // Pridanie podpisov
+    fileContent.append("\n")
+    fileContent.append("Podpis odovzdal: _________________________\n")
+    fileContent.append("\n")
+    fileContent.append("Podpis prijal: ___________________________\n")
+    
+    // Zápis do súboru
+    exportFile.writeText(fileContent.toString())
+    
+    if (showPreview) {
+        previewContent = fileContent.toString()
+        previewType = "table"
+        showPreviewDialog = true
+    } else {
+        Toast.makeText(
+            context,
+            "Sumy boli úspešne exportované do súboru ${fileName}.txt",
+            Toast.LENGTH_LONG
+        ).show()
+    }
+    
+    return exportFile
+}
+
+// 7. Potrebné importy, ktoré treba pridať na začiatok súboru
+/*
+import android.content.Context
+import android.widget.Toast
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.*
+*/ 
